@@ -1,0 +1,28 @@
+# 빌드 결과물
+Binaries/
+Intermediate/
+Build/
+Saved/
+DerivedDataCache/
+
+# IDE
+.vs/
+.vscode/
+*.sln
+*.xcworkspace
+
+# 기타
+*.log
+*.VC.db
+*.opensdf
+*.sdf
+*.suo
+*.user
+
+# 외부 에셋
+Content/ParagonGideon/
+Content/ParagonMinions/
+Content/ParagonGrux/
+Content/AgoraMonolith/
+Content/Paragon*/
+Content/KiteDemo/
