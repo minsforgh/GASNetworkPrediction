@@ -26,3 +26,9 @@ Content/ParagonGrux/
 Content/AgoraMonolith/
 Content/Paragon*/
 Content/KiteDemo/
+
+# Claude
+.claude/
+CLAUDE.md
+.idea/
+Plugins/Developer/RiderLink/

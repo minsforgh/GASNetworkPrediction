@@ -7,8 +7,19 @@ public class GASNetworkPrediction : ModuleRules
 	public GASNetworkPrediction(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+
+		PublicDependencyModuleNames.AddRange(new string[] {
+			"Core",
+			"CoreUObject",
+			"Engine",
+			"InputCore",
+			"EnhancedInput",
+			"GameplayAbilities",
+			"GameplayTags",
+			"GameplayTasks",
+			"Niagara",
+			"NetCore"
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
