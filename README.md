@@ -121,7 +121,7 @@ TArray<FMeteorImpactData> UGNPMeteorFunctionLibrary::CalculateMeteorImpacts(
     return ImpactDataArray;
 }
 
-// C++ FTimerManager로 순차 판정 (BP Delay 재트리거 버그 회피)
+// C++ FTimerManager로 순차 판정 
 void UGNPGameplayAbility_Meteor::ScheduleDamage(const TArray<FMeteorImpactData>& Impacts)
 {
     for (const auto& Impact : Impacts)
