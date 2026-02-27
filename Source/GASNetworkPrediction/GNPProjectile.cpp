@@ -8,10 +8,20 @@
 #include "Particles/ParticleSystem.h"
 #include "Net/UnrealNetwork.h"
 #include "EngineUtils.h"
+#include "DrawDebugHelpers.h"
+
+// 투사체 디버그 CVar
+// 1: 예측 경로(초록) + 서버 확정 경로(파랑) + 스냅 지점(주황) 표시
+static TAutoConsoleVariable<int32> CVarShowProjectileDebug(
+	TEXT("GNP.ShowProjectileDebug"),
+	0,
+	TEXT("0: Off  1: 예측(초록)/서버(파랑) 경로 + 스냅 지점 표시"),
+	ECVF_Cheat
+);
 
 AGNPProjectile::AGNPProjectile()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	// Replication
 	bReplicates = true;
@@ -47,8 +57,39 @@ void AGNPProjectile::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 수명 설정
 	SetLifeSpan(LifeSpan);
+	LastTickLocation = GetActorLocation();
+}
+
+void AGNPProjectile::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (CVarShowProjectileDebug.GetValueOnGameThread() < 1) return;
+
+	const FVector CurrentLocation = GetActorLocation();
+
+	if (!LastTickLocation.IsZero() && !LastTickLocation.Equals(CurrentLocation))
+	{
+		FColor LineColor;
+		switch (PredictionState)
+		{
+		case EProjectilePredictionState::Predicted:
+			LineColor = FColor::Green;   // 예측 투사체: 초록
+			break;
+		case EProjectilePredictionState::Confirmed:
+			LineColor = FColor::Blue;    // 서버 확정 투사체: 파랑
+			break;
+		default:
+			LineColor = FColor::White;   // 다른 클라이언트 투사체: 흰색
+			break;
+		}
+
+		DrawDebugLine(GetWorld(), LastTickLocation, CurrentLocation,
+			LineColor, false, 5.0f, 0, 1.5f);
+	}
+
+	LastTickLocation = CurrentLocation;
 }
 
 void AGNPProjectile::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -109,22 +150,40 @@ void AGNPProjectile::InitAsPredicted(AActor* InInstigator, int32 InProjectileID)
 
 void AGNPProjectile::OnRep_ProjectileID()
 {
-	// 서버 투사체가 리플리케이트됨 - 매칭되는 예측 투사체 찾기
+	// 서버 투사체가 클라이언트에 리플리케이트됨
 	if (ProjectileID >= 0 && PredictionState == EProjectilePredictionState::None)
 	{
 		PredictionState = EProjectilePredictionState::Confirmed;
 
-		// 로컬 예측 투사체 찾기
 		AGNPProjectile* PredictedProj = FindPredictedProjectile(ProjectileID);
 		if (PredictedProj)
 		{
-			// === 스냅 보정 ===
-			// 서버 투사체를 예측 투사체 위치로 이동
+			// 스냅: 서버 투사체를 예측 투사체 위치로 이동
+			const FVector ServerLocation = GetActorLocation();   // 스냅 전 서버 위치
 			const FVector PredictedLocation = PredictedProj->GetActorLocation();
 			const FRotator PredictedRotation = PredictedProj->GetActorRotation();
-			const float LocationDiff = FVector::Dist(GetActorLocation(), PredictedLocation);
+			const float LocationDiff = FVector::Dist(ServerLocation, PredictedLocation);
+
+			// 스냅 지점 시각화: 서버 위치(주황) → 예측 위치(노랑) 차이 표시
+			if (CVarShowProjectileDebug.GetValueOnGameThread() >= 1)
+			{
+				DrawDebugSphere(GetWorld(), ServerLocation, 8.f, 8, FColor::Orange, false, 5.0f);
+				DrawDebugSphere(GetWorld(), PredictedLocation, 8.f, 8, FColor::Yellow, false, 5.0f);
+				DrawDebugLine(GetWorld(), ServerLocation, PredictedLocation,
+					FColor::Orange, false, 5.0f, 0, 2.0f);
+			}
 
 			SetActorLocationAndRotation(PredictedLocation, PredictedRotation);
+
+			// 예측 투사체의 속도/방향 이어받기 (궤적 연속성 유지)
+			if (MovementComp && PredictedProj->MovementComp)
+			{
+				MovementComp->Velocity = PredictedProj->MovementComp->Velocity;
+			}
+
+			// 스냅 후 서버가 위치를 다시 덮어쓰지 못하도록 차단
+			// 클라이언트에서만 적용, 서버 권위적 충돌 판정에는 영향 없음
+			SetReplicateMovement(false);
 
 			// 예측 투사체 삭제
 			PredictedProj->Destroy();
@@ -132,7 +191,7 @@ void AGNPProjectile::OnRep_ProjectileID()
 			if (GEngine)
 			{
 				GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Blue,
-					FString::Printf(TEXT("[Snap] ID: %d - Diff: %.1f cm"), ProjectileID, LocationDiff));
+					FString::Printf(TEXT("[Snap] ID: %d  Diff: %.1fcm"), ProjectileID, LocationDiff));
 			}
 		}
 	}

@@ -45,6 +45,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// 충돌 처리
@@ -100,4 +101,7 @@ protected:
 
 	// 클라이언트에서 예측 투사체 찾기
 	AGNPProjectile* FindPredictedProjectile(int32 InProjectileID) const;
+
+	// 디버그용 이전 틱 위치 (경로 선 그리기)
+	FVector LastTickLocation = FVector::ZeroVector;
 };

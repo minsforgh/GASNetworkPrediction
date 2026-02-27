@@ -14,6 +14,16 @@ static TAutoConsoleVariable<int32> CVarShowHitscanDebug(
 	ECVF_Cheat
 );
 
+// Rewind 방식 선택
+// 0: Ping 기반 (기본, 안정적) - PlayerState Ping으로 풀 RTT 계산
+// 1: 타임스탬프 기반 (실험) - 클라이언트가 보낸 GameState 서버 시간 직접 사용
+static TAutoConsoleVariable<int32> CVarRewindMode(
+	TEXT("GNP.RewindMode"),
+	1,
+	TEXT("0: Ping 기반  1: 타임스탬프 기반 (기본)"),
+	ECVF_Cheat
+);
+
 // ============ NetSerialize ============
 
 bool FGameplayAbilityTargetData_HitscanRewind::NetSerialize(
@@ -253,29 +263,51 @@ void UGNPGameplayAbility_Hitscan::ServerValidateAndApplyDamage(
 
 	AActor* AvatarActor = GetAvatarActorFromActorInfo();
 
-	// Ping 기반 Rewind 시간 계산 (서버 시계만 사용, 클라이언트 시계 의존 없음)
-	// 풀 RTT만큼 되감기: 클라이언트는 HalfRTT 전의 세상을 보고 + 발사 패킷이 HalfRTT 걸려 도착
 	const float ServerTimeNow = World->GetTimeSeconds();
-	float PingMs = 0.0f;
+	float RewindToTime = 0.0f;
+	float RewindSeconds = 0.0f;
+	const int32 RewindMode = CVarRewindMode.GetValueOnGameThread();
 
-	APlayerController* PC = Cast<APlayerController>(GetActorInfo().PlayerController.Get());
-	if (PC)
+	if (RewindMode == 1)
 	{
-		if (APlayerState* PS = PC->GetPlayerState<APlayerState>())
+		// 타임스탬프 방식: 클라이언트가 보낸 GameState 서버 시간을 Rewind 목표로 직접 사용
+		// 클라이언트의 GetServerWorldTimeSeconds()는 이미 리플리케이션 지연만큼 뒤처진 값이므로
+		// 별도 Ping 계산 없이 그 시점으로 바로 되감기
+		const float TimeDiff = ServerTimeNow - ClientTimestamp;
+
+		// 타임스탬프가 미래이거나(조작 의심) 너무 오래된 경우 거부
+		if (TimeDiff < 0.0f || TimeDiff > MaxRewindTime)
 		{
-			PingMs = static_cast<float>(PS->GetPingInMilliseconds());
+			return;
 		}
+
+		RewindSeconds = TimeDiff;
+		RewindToTime = ClientTimestamp;
 	}
-
-	const float RewindSeconds = PingMs / 1000.0f;
-
-	// 치팅 방지: 되감기 시간이 최대값 초과 시 거부
-	if (RewindSeconds > MaxRewindTime)
+	else
 	{
-		return;
-	}
+		// Ping 기반 방식 (기본, 안정적)
+		// 풀 RTT만큼 되감기: 클라이언트 뷰 지연(HalfRTT) + 패킷 전송(HalfRTT) = FullRTT
+		float PingMs = 0.0f;
+		APlayerController* PC = Cast<APlayerController>(GetActorInfo().PlayerController.Get());
+		if (PC)
+		{
+			if (APlayerState* PS = PC->GetPlayerState<APlayerState>())
+			{
+				PingMs = static_cast<float>(PS->GetPingInMilliseconds());
+			}
+		}
 
-	const float RewindToTime = ServerTimeNow - RewindSeconds;
+		RewindSeconds = PingMs / 1000.0f;
+
+		// 치팅 방지: 되감기 시간이 최대값 초과 시 거부
+		if (RewindSeconds > MaxRewindTime)
+		{
+			return;
+		}
+
+		RewindToTime = ServerTimeNow - RewindSeconds;
+	}
 
 	// Rewind 서브시스템으로 되감기 + 트레이스 + 복원
 	UGNPRewindSubSystem* RewindSys = World->GetSubsystem<UGNPRewindSubSystem>();
@@ -287,11 +319,13 @@ void UGNPGameplayAbility_Hitscan::ServerValidateAndApplyDamage(
 	FHitResult ServerHitResult = RewindSys->ValidateHitscanHit(
 		RewindToTime, TraceStart, TraceEnd, AvatarActor);
 
-	// 디버그 레벨 2: Ping/Rewind 정보를 화면에 표시
+	// 디버그 레벨 2: Rewind 정보 화면 표시
 	if (CVarShowHitscanDebug.GetValueOnGameThread() >= 2)
 	{
-		const FString DebugText = FString::Printf(TEXT("Ping: %.0fms  Rewind: %.0fms  Hit: %s"),
-			PingMs, PingMs,
+		const TCHAR* ModeText = (RewindMode == 1) ? TEXT("TIMESTAMP") : TEXT("PING");
+		const FString DebugText = FString::Printf(
+			TEXT("[%s] Rewind: %.0fms  Hit: %s"),
+			ModeText, RewindSeconds * 1000.0f,
 			ServerHitResult.bBlockingHit ? TEXT("YES") : TEXT("NO"));
 		DrawDebugString(World, TraceStart + FVector(0, 0, 50),
 			DebugText, nullptr, FColor::Yellow, 3.0f, true);

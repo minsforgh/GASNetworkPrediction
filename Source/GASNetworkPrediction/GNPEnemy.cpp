@@ -2,6 +2,15 @@
 #include "AbilitySystemComponent.h"
 #include "GNPAttributeSet.h"
 #include "GNPRewindSubSystem.h"
+#include "Net/UnrealNetwork.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Components/CapsuleComponent.h"
+
+void AGNPEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AGNPEnemy, bIsDead);
+}
 
 AGNPEnemy::AGNPEnemy()
 {
@@ -16,6 +25,11 @@ AGNPEnemy::AGNPEnemy()
 
 	// AttributeSet 생성 (ASC가 자동으로 소유권 가짐)
 	AttributeSet = CreateDefaultSubobject<UGNPAttributeSet>(TEXT("AttributeSet"));
+
+	// 이동 방향으로 자동 회전 (왕복 이동 시 방향 전환)
+	// bUseControllerRotationYaw 기본값 true가 bOrientRotationToMovement를 무시하므로 반드시 false 필요
+	bUseControllerRotationYaw = false;
+	GetCharacterMovement()->bOrientRotationToMovement = true;
 }
 
 UAbilitySystemComponent* AGNPEnemy::GetAbilitySystemComponent() const
@@ -51,27 +65,49 @@ float AGNPEnemy::GetHealthPercent() const
 	return 0.0f;
 }
 
+void AGNPEnemy::HandleDeath()
+{
+	// 중복 호출 방지
+	if (bIsDead) return;
+
+	bIsDead = true;
+
+	// 충돌 비활성화 (히트스캔 트레이스 제외)
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// 이동 중지
+	GetCharacterMovement()->StopMovementImmediately();
+	GetCharacterMovement()->DisableMovement();
+
+	// 사망 애니메이션 재생 시간 후 Destroy 
+	GetWorldTimerManager().SetTimer(DeathTimerHandle, [this]()
+	{
+		Destroy();
+	}, 2.0f, false);
+}
+
 void AGNPEnemy::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
 	// 서버에서만 이동 (리플리케이션으로 클라이언트 동기화)
-	if (!HasAuthority() || !bPatrolEnabled)
+	if (!HasAuthority() || !bPatrolEnabled || bIsDead)
 	{
 		return;
 	}
 
 	const FVector CurrentLoc = GetActorLocation();
-	const FVector Direction = (CurrentPatrolTarget - CurrentLoc).GetSafeNormal();
-	const FVector NewLoc = CurrentLoc + Direction * PatrolSpeed * DeltaTime;
 
-	SetActorLocation(NewLoc);
-
-	// 목표 지점 도달 시 반대편으로 전환
-	if (FVector::Dist(NewLoc, CurrentPatrolTarget) < 30.0f)
+	// 목표 지점 도달 판정 (XY 평면 기준, Z 오차 무시)
+	if (FVector::Dist2D(CurrentLoc, CurrentPatrolTarget) < 50.0f)
 	{
-		CurrentPatrolTarget = (CurrentPatrolTarget.Equals(PatrolPointA, 1.0f)) ? PatrolPointB : PatrolPointA;
+		bMovingToB = !bMovingToB;
+		CurrentPatrolTarget = bMovingToB ? PatrolPointB : PatrolPointA;
 	}
+
+	// XY 평면 이동 방향 계산 후 이동
+	const FVector Direction = (CurrentPatrolTarget - CurrentLoc).GetSafeNormal2D();
+	AddMovementInput(Direction, 1.0f);
 }
 
 void AGNPEnemy::BeginPlay()
@@ -82,6 +118,10 @@ void AGNPEnemy::BeginPlay()
 	PatrolPointA = GetActorLocation();
 	PatrolPointB = PatrolPointA + PatrolOffset;
 	CurrentPatrolTarget = PatrolPointB;
+	if (bPatrolEnabled)
+	{
+		GetCharacterMovement()->MaxWalkSpeed = PatrolSpeed;
+	}
 
 	// 클라이언트에서 ASC ActorInfo 초기화 (체력바 바인딩 등)
 	if (!HasAuthority() && AbilitySystemComponent)

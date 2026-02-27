@@ -2,6 +2,7 @@
 #include "GNPAttributeSet.h"
 #include "Net/UnrealNetwork.h"
 #include "GameplayEffectExtension.h"
+#include "GNPEnemy.h"
 
 UGNPAttributeSet::UGNPAttributeSet()
 {
@@ -49,9 +50,14 @@ void UGNPAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbac
 		if (GetHealth() <= 0.f)
 		{
 			AActor* OwnerActor = GetOwningActor();
-			if (OwnerActor)
+			if (AGNPEnemy* Enemy = Cast<AGNPEnemy>(OwnerActor))
 			{
-				UE_LOG(LogTemp, Log, TEXT("[Death] %s killed! Destroying."), *OwnerActor->GetName());
+				// 적: 사망 애니메이션 재생 후 Destroy
+				Enemy->HandleDeath();
+			}
+			else if (OwnerActor)
+			{
+				// 플레이어 등 기타 액터: 즉시 Destroy
 				OwnerActor->Destroy();
 			}
 		}

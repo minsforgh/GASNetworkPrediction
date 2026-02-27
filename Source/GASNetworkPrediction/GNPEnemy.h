@@ -35,6 +35,13 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 
+	// 사망 처리 (AttributeSet에서 호출 → 애니메이션 재생 후 Destroy)
+	void HandleDeath();
+
+	// 사망 여부 (리플리케이션 → 클라이언트 AnimBP에서 읽음)
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "State")
+	bool bIsDead = false;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -71,6 +78,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Patrol", meta = (EditCondition = "bPatrolEnabled"))
 	float PatrolSpeed = 200.0f;
 
+	// GetLifetimeReplicatedProps (bIsDead 리플리케이션 등록)
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 private:
 	bool bAttributesInitialized = false;
 
@@ -78,4 +88,8 @@ private:
 	FVector PatrolPointA;
 	FVector PatrolPointB;
 	FVector CurrentPatrolTarget;
+	bool bMovingToB = true;
+
+	// 사망 후 Destroy 타이머
+	FTimerHandle DeathTimerHandle;
 };
