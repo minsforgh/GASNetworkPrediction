@@ -149,7 +149,7 @@ void UGNPGameplayAbility_Meteor::ScheduleDamage(const TArray<FMeteorImpactData>&
 <img src="docs/images/hitscan.gif" width="900" height="300">
 
 **문제**: 고핑 환경에서 클라이언트 화면의 적 위치 ≠ 서버 실제 위치  
-**해결**: 서버가 클라이언트의 Ping만큼 시간을 되감아 판정
+**해결**: 서버가 클라이언트의 발사 시점 타임스탬프를 기준으로 되감아 판정
 
 ```cpp
 // 서버: 타임스탬프 기반 되감기 후 판정
@@ -318,53 +318,30 @@ GNP.DebugMode 1            # 전체 디버그 + Net PktLag=300
 
 ## 트러블슈팅 & 기술 결정
 
-### 1. 왜 HalfRTT가 아니라 FullRTT 되감기인가?
+### 1. Server Rewind: Ping/2로 계산했더니 이동 중인 적이 빗나가는 문제
 
-**초기 구현 (실패)**
-```
-되감기 시간 = RTT / 2 (편도 지연만 보상)
-```
-> RTT (Round-Trip Time): 클라이언트 → 서버 → 클라이언트 왕복 시간. Ping과 동일한 개념.
+**문제**: Rewind를 도입했는데도 이동 중인 적을 조준하면 빗나감
 
-**문제**: 이동 중인 적을 조준해도 빗나감
+**원인**: 되감기 시간을 `Ping/2000` (HalfRTT)으로 계산
 
-**원인 분석**:
-```
-[클라이언트가 보는 세상]
-- 서버 → 클라이언트 전송 지연: HalfRTT만큼 과거
-- 즉, 클라이언트 화면 = 서버 기준 HalfRTT 전의 상태
-
-[클라이언트가 쏜 순간]
-- 클라이언트 → 서버 전송 지연: +HalfRTT 추가
-- 서버 도착 시점 = 클라이언트 발사 시점 + HalfRTT
-
-[결론]
-- 서버가 되감아야 할 시간 = HalfRTT + HalfRTT = FullRTT
-```
-
-**해결**: 클라이언트 타임스탬프를 Rewind 목표 시점으로 직접 사용
-
-클라이언트는 발사 시점에 `GameState->GetServerWorldTimeSeconds()`를 타임스탬프로 기록합니다.
-UE5 내부적으로 이 함수는 서버가 리플리케이트한 시점의 서버 시간 기반으로 Delta를 계산하기 때문에,
-실제 서버 시간보다 리플리케이션 지연(≈ HalfRTT)만큼 뒤처진 값을 반환합니다.
-이 타임스탬프가 서버에 도착할 때 패킷 전송 지연(+HalfRTT)이 추가되므로:
+Ping은 왕복 시간이므로 편도인 HalfRTT만 보상하면 된다고 판단했는데,
+클라이언트 화면 자체가 이미 HalfRTT만큼 과거를 보고 있다는 점이 핵심이었다:
 
 ```
-TimeDiff = ServerNow - ClientTimestamp
-         ≈ HalfRTT (GetServerWorldTimeSeconds 리플리케이션 지연)
-         + HalfRTT (클라이언트 → 서버 패킷 전송)
-         = FullRTT  →  자동 보정
+[클라이언트가 보는 화면]  =  HalfRTT 전의 서버 상태
+[클라이언트 → 서버 전송]  =  +HalfRTT
+
+→ 서버가 되감아야 할 총 시간 = HalfRTT + HalfRTT = FullRTT
 ```
 
-Ping을 별도로 계산하지 않아도 타임스탬프 자체에 FullRTT가 누적되어 있습니다.
+**해결**: FullRTT를 보상하는 두 가지 방식을 모두 구현했다
 
-```cpp
-// ClientTimestamp = 발사 시점의 GameState->GetServerWorldTimeSeconds()
-// TimeDiff = ServerNow - ClientTimestamp ≈ FullRTT (자동 누적)
-RewindSubSystem->RewindTo(ClientTimestamp);
-```
+- **Ping 기반** (`Ping/1000`): FullRTT를 명시적으로 계산
+- **타임스탬프 기반** (`ClientTimestamp`): `GetServerWorldTimeSeconds()`가 클라이언트에서 항상 HalfRTT 뒤처진 값을 반환하므로 `ServerNow - ClientTimestamp ≈ FullRTT`가 자동 반영됨
 
-**결과**: 300ms 지연 환경에서도 공정한 히트 판정
+`GNP.RewindMode` CVar로 런타임 전환하며 비교 검증했다.
+두 방식 모두 300ms 환경에서 정상 동작함을 확인했다.
+(Ping 기반: 310ms 되감기 / 타임스탬프 기반: 333ms 되감기)
 
 ---
 
