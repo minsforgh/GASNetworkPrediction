@@ -8,6 +8,9 @@ public class GASNetworkPrediction : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
+		// 서브디렉토리 상대경로 include 허용 (예: "GAS/GNPAttributeSet.h")
+		PublicIncludePaths.Add(ModuleDirectory);
+
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core",
 			"CoreUObject",

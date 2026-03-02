@@ -1,6 +1,6 @@
 #include "GNPGameplayAbility_Hitscan.h"
 #include "AbilitySystemComponent.h"
-#include "GNPRewindSubSystem.h"
+#include "Network/GNPRewindSubSystem.h"
 #include "GameFramework/PlayerController.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/GameStateBase.h"

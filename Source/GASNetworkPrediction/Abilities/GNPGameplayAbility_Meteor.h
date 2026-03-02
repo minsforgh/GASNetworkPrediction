@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GNPGameplayAbility.h"
+#include "GAS/GNPGameplayAbility.h"
 #include "GNPMeteorFunctionLibrary.h"
 #include "GNPGameplayAbility_Meteor.generated.h"
 

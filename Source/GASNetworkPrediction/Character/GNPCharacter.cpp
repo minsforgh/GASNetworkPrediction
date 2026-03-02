@@ -1,6 +1,6 @@
 #include "GNPCharacter.h"
 #include "AbilitySystemComponent.h"
-#include "GNPAttributeSet.h"
+#include "GAS/GNPAttributeSet.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayTagContainer.h"
 #include "EnhancedInputComponent.h"

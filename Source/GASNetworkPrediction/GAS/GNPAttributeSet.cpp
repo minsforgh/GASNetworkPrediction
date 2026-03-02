@@ -2,7 +2,7 @@
 #include "GNPAttributeSet.h"
 #include "Net/UnrealNetwork.h"
 #include "GameplayEffectExtension.h"
-#include "GNPEnemy.h"
+#include "Enemy/GNPEnemy.h"
 
 UGNPAttributeSet::UGNPAttributeSet()
 {

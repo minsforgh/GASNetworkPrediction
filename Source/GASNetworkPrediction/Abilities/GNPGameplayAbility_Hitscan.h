@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GNPGameplayAbility.h"
+#include "GAS/GNPGameplayAbility.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "GNPGameplayAbility_Hitscan.generated.h"
 
